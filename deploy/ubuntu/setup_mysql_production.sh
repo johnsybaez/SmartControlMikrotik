@@ -90,7 +90,7 @@ SECRET_KEY=${SECRET_KEY}
 JWT_ALGORITHM=HS256
 JWT_EXPIRATION_MINUTES=1440
 
-CORS_ORIGINS=https://${DOMAIN}
+CORS_ORIGINS=http://${DOMAIN},https://${DOMAIN}
 
 DATABASE_URL=mysql+pymysql://${DB_USER}:${DB_PASS}@127.0.0.1:3306/${DB_NAME}
 
@@ -154,6 +154,7 @@ server {
 NGINX
 
 ln -sf /etc/nginx/sites-available/smartcontrol /etc/nginx/sites-enabled/smartcontrol
+rm -f /etc/nginx/sites-enabled/default
 nginx -t
 systemctl enable --now nginx
 systemctl reload nginx
