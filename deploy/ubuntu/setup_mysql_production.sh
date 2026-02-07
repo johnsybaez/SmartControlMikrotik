@@ -104,6 +104,8 @@ MT_PASS=${MT_PASS}
 ENV
 
 chown smartcontrol:smartcontrol /opt/smartcontrol/.env
+cp /opt/smartcontrol/.env /opt/smartcontrol/backend/.env
+chown smartcontrol:smartcontrol /opt/smartcontrol/backend/.env
 
 # 8) Backend systemd service
 cat >/etc/systemd/system/smartcontrol-backend.service <<SERVICE

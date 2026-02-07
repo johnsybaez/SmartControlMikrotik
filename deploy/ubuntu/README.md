@@ -38,6 +38,17 @@ systemctl status smartcontrol-backend --no-pager
 curl http://127.0.0.1:8000/health
 ```
 
+## Crear usuario admin (seed)
+Si la base esta limpia, ejecuta el seed para crear el usuario `admin`:
+
+```bash
+sudo cp /opt/smartcontrol/.env /opt/smartcontrol/backend/.env
+sudo chown smartcontrol:smartcontrol /opt/smartcontrol/backend/.env
+sudo -u smartcontrol bash -lc "cd /opt/smartcontrol/backend; /opt/smartcontrol/venv/bin/python -m scripts.seed"
+```
+
+Credenciales por defecto: `admin / Soporte123`. Cambiala al primer ingreso.
+
 ## Notas
 - HTTPS con Certbot no se incluye en el script (usar Nginx Proxy Manager).
 - El backend queda escuchando en `:8000` y Nginx lo expone via `/api/`.
