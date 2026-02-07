@@ -131,7 +131,7 @@ sudo -u smartcontrol bash -lc "cd /opt/smartcontrol/frontend; npm ci; npm run bu
 rsync -a --delete /opt/smartcontrol/frontend/dist/ /var/www/smartcontrol/
 
 # 10) Nginx
-cat >/etc/nginx/sites-available/smartcontrol <<NGINX
+cat >/etc/nginx/sites-available/smartcontrol <<'NGINX'
 server {
     listen 80;
     server_name ${DOMAIN};
