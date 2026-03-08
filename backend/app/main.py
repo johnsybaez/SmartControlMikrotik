@@ -105,7 +105,7 @@ async def csrf_protection(request: Request, call_next):
         settings.CSRF_PROTECTION_ENABLED
         and request.url.path.startswith("/api")
         and request.method in {"POST", "PUT", "PATCH", "DELETE"}
-        and request.url.path not in {"/api/auth/login"}
+        and request.url.path not in {"/api/auth/login", "/api/auth/mfa/setup", "/api/auth/mfa/enable", "/api/auth/mfa/disable"}
     ):
         csrf_cookie = request.cookies.get(settings.CSRF_COOKIE_NAME, "")
         csrf_header = request.headers.get(settings.CSRF_HEADER_NAME, "")
@@ -237,6 +237,7 @@ async def root():
         "docs": "/docs",
         "health": "/health",
     }
+
 
 
 
