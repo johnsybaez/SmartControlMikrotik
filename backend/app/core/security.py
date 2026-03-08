@@ -1,7 +1,9 @@
-"""Security helpers: JWT, hashing, RBAC, and secret encryption."""
+"""Security helpers: JWT, hashing, RBAC, CSRF, and secret encryption."""
 from datetime import datetime, timedelta, timezone
 import base64
 import hashlib
+import hmac
+import secrets
 from typing import Optional
 
 import bcrypt
@@ -32,7 +34,6 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     try:
         return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
     except ValueError:
-        # Invalid hash format should never authenticate.
         logger.warning("invalid_password_hash_format")
         return False
 
@@ -133,8 +134,19 @@ def decrypt_secret(value: str) -> str:
     try:
         return Fernet(_fernet_key()).decrypt(value.encode("utf-8")).decode("utf-8")
     except InvalidToken:
-        # Legacy rows may still be plain text.
         return value
+
+
+def generate_csrf_token() -> str:
+    """Generate CSRF token for browser clients."""
+    return secrets.token_urlsafe(32)
+
+
+def compare_tokens(left: str, right: str) -> bool:
+    """Constant-time token comparison."""
+    if not left or not right:
+        return False
+    return hmac.compare_digest(left, right)
 
 
 require_admin = require_role("admin")

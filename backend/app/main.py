@@ -16,7 +16,7 @@ from app.core.audit import record_audit_event
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.core.rate_limit import limiter
-from app.core.security import decode_access_token, get_current_user_payload
+from app.core.security import compare_tokens, decode_access_token, get_current_user_payload
 from app.db.database import SessionLocal, init_db
 from app.routes import audit, auth, devices, plans, qos, routers, stats, users
 
@@ -51,7 +51,7 @@ app.add_middleware(
     allow_origins=settings.cors_origins_list,
     allow_credentials=settings.CORS_CREDENTIALS,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With", settings.CSRF_HEADER_NAME],
 )
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
@@ -98,6 +98,21 @@ async def security_headers(request: Request, call_next):
 
     return response
 
+
+@app.middleware("http")
+async def csrf_protection(request: Request, call_next):
+    if (
+        settings.CSRF_PROTECTION_ENABLED
+        and request.url.path.startswith("/api")
+        and request.method in {"POST", "PUT", "PATCH", "DELETE"}
+        and request.url.path not in {"/api/auth/login"}
+    ):
+        csrf_cookie = request.cookies.get(settings.CSRF_COOKIE_NAME, "")
+        csrf_header = request.headers.get(settings.CSRF_HEADER_NAME, "")
+        if not compare_tokens(csrf_cookie, csrf_header):
+            return JSONResponse(status_code=403, content={"detail": "CSRF token invalido"})
+
+    return await call_next(request)
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
@@ -222,3 +237,7 @@ async def root():
         "docs": "/docs",
         "health": "/health",
     }
+
+
+
+

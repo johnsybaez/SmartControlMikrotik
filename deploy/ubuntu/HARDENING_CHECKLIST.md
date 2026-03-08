@@ -1,8 +1,7 @@
-# Hardening Checklist (Prioridad Critica)
+# Hardening Checklist (Critica + Alta)
 
-## 1) Content-Security-Policy (CSP)
+## 1) CSP
 - Aplicado en Nginx (`smartcontrol-hardened-*.conf`).
-- No usar CSP en `frontend/index.html` para no romper dev runtime.
 
 Verificar:
 ```bash
@@ -10,8 +9,7 @@ curl -I https://app.tudominio.com | grep -i content-security-policy
 ```
 
 ## 2) HSTS
-- Activo solo en `smartcontrol-hardened-https.conf`.
-- Requiere TLS valido.
+- Activo solo en plantilla HTTPS.
 
 Verificar:
 ```bash
@@ -19,38 +17,63 @@ curl -I https://app.tudominio.com | grep -i strict-transport-security
 ```
 
 ## 3) Bloqueo de archivos sensibles
-- Regla Nginx para `.env`, dotfiles y extensiones sensibles (`.sql`, `.bak`, `.pem`, etc).
+- Deniega `.env`, dotfiles y extensiones sensibles.
 
 Verificar:
 ```bash
 curl -i https://app.tudominio.com/.env
 curl -i https://app.tudominio.com/.git/config
 ```
-Debe responder `404`.
 
-## 4) WAF (Cloudflare + servidor)
-### Cloudflare (recomendado)
+## 4) WAF
+### Cloudflare
 - Security > WAF > Managed Rules: ON.
-- Activar OWASP Core Ruleset.
-- Security Level: Medium o High.
+- OWASP Core Ruleset: ON.
 - Bot Fight Mode: ON.
-- Rate limiting rule:
-  - URI equals `/api/auth/login`
-  - Threshold: 5 requests / 1 minute por IP
-  - Action: Block 10 minutos.
+- Regla rate-limit: `/api/auth/login`, 5 req/min/IP, bloqueo 10 min.
 
 ### Servidor
-- Nginx ya aplica `limit_req` en `/api/auth/login`.
-- Opcional extra: ModSecurity + OWASP CRS si tu infraestructura lo permite.
+- Nginx aplica `limit_req` para login.
+- Opcional: ModSecurity + OWASP CRS.
 
 ## 5) Rate limiting backend
-- Backend: `RATE_LIMIT_LOGIN=5/minute` en `.env`.
-- Endpoint protegido: `/api/auth/login`.
+- Backend: `RATE_LIMIT_LOGIN=5/minute`.
+- Login protegido por `slowapi`.
+
+## 6) Headers de alta prioridad
+- `X-Frame-Options: DENY`
+- `X-Content-Type-Options: nosniff`
+- `Referrer-Policy: no-referrer`
+- `Permissions-Policy` restringida
+
+## 7) Ocultar fingerprinting
+- `server_tokens off` en Nginx.
+- `proxy_hide_header X-Powered-By` para backend.
 
 Verificar:
-- Intentar 6+ logins fallidos en 1 minuto y confirmar `429` o bloqueo.
+```bash
+curl -I https://app.tudominio.com | grep -Ei 'server:|x-powered-by'
+```
 
-## 6) systemd hardening
+## 8) TLS fuerte
+- `ssl_protocols TLSv1.2 TLSv1.3;`
+- TLS 1.0/1.1 deshabilitado.
+
+Verificar:
+```bash
+openssl s_client -connect app.tudominio.com:443 -tls1
+# Debe fallar
+```
+
+## 9) Cookies seguras de sesion
+- Backend setea cookie de sesion con `HttpOnly; Secure; SameSite=Strict`.
+- Cookie CSRF separada para header token.
+
+## 10) CSRF protection
+- Backend exige `X-CSRF-Token` en `POST/PUT/PATCH/DELETE` de `/api/*` (excepto login).
+- Frontend envia token automaticamente.
+
+## 11) systemd hardening
 - `NoNewPrivileges=true`
 - `ProtectSystem=full`
 - `ProtectHome=true`
@@ -62,13 +85,13 @@ Verificar:
 systemctl cat smartcontrol-backend
 ```
 
-## 7) Post-deploy obligatorio
+## 12) Post-deploy obligatorio
 1. Cambiar password del usuario admin.
 2. Rotar `SECRET_KEY` si fue compartida.
-3. Validar CORS en `.env` a dominio real.
+3. Confirmar CORS y TRUSTED_HOSTS reales.
 4. Ejecutar:
 ```bash
 nginx -t && systemctl reload nginx
 systemctl restart smartcontrol-backend
-curl http://127.0.0.1:8000/health
+curl -fsS http://127.0.0.1:8000/health
 ```

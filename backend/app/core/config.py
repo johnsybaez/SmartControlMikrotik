@@ -8,7 +8,6 @@ from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-# Load backend/.env before creating Settings.
 env_path = Path(__file__).parent.parent.parent / ".env"
 if env_path.exists():
     load_dotenv(dotenv_path=env_path, override=True)
@@ -17,19 +16,16 @@ if env_path.exists():
 class Settings(BaseSettings):
     """Application configuration"""
 
-    # App config
     APP_NAME: str = "SmartControl"
     APP_VERSION: str = "1.0.0"
     ENVIRONMENT: str = "development"
     DEBUG: bool = False
 
-    # Server
     HOST: str = "0.0.0.0"
     PORT: int = 8000
     WORKERS: int = 1
     RELOAD: bool = False
 
-    # Security
     SECRET_KEY: str = Field(..., min_length=32)
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRATION_MINUTES: int = 60
@@ -38,18 +34,19 @@ class Settings(BaseSettings):
     TRUSTED_HOSTS: str = "localhost,127.0.0.1"
     ENABLE_SECURITY_HEADERS: bool = True
     FORCE_HTTPS: bool = False
+    SESSION_COOKIE_NAME: str = "smartcontrol_session"
+    CSRF_COOKIE_NAME: str = "smartcontrol_csrf"
+    CSRF_HEADER_NAME: str = "X-CSRF-Token"
+    CSRF_PROTECTION_ENABLED: bool = True
 
-    # Database
     DATABASE_URL: str = "sqlite:///./smartbjportal.db"
 
-    # Logging
     LOG_LEVEL: str = "INFO"
     LOG_FILE: str = "logs/smartcontrol.log"
     LOG_MAX_BYTES: int = 10485760
     LOG_BACKUP_COUNT: int = 5
     LOG_FORMAT: str = "json"
 
-    # MikroTik default
     MT_HOST: str = "10.80.0.1"
     MT_PORT: int = 8728
     MT_SSH_PORT: int = 2214
@@ -62,28 +59,23 @@ class Settings(BaseSettings):
     MT_TIMEOUT: int = 10
     ROUTER_CREDENTIALS_KEY: str = ""
 
-    # Address lists
     LIST_PERMITIDO: str = "INET_PERMITIDO"
     LIST_LIMITADO: str = "INET_LIMITADO"
     LIST_BLOQUEADO: str = "INET_BLOQUEADO"
 
-    # Circuit breaker
     CIRCUIT_FAILURE_THRESHOLD: int = 3
     CIRCUIT_TIMEOUT_SECONDS: int = 300
     CIRCUIT_HALF_OPEN_MAX_CALLS: int = 1
 
-    # Stats
     STATS_COLLECTION_INTERVAL_MINUTES: int = 60
     STATS_RETENTION_DAYS: int = 90
     REPORTS_TEMP_DIR: str = "/tmp/smartcontrol_reports"
 
-    # Rate limiting
     RATE_LIMIT_ENABLED: bool = True
     RATE_LIMIT_REQUESTS: int = 100
     RATE_LIMIT_PERIOD_SECONDS: int = 60
     RATE_LIMIT_LOGIN: str = "5/minute"
 
-    # Backup
     BACKUP_ENABLED: bool = True
     BACKUP_SCHEDULE: str = "0 2 * * *"
     BACKUP_RETENTION_DAYS: int = 30

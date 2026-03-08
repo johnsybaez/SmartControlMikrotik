@@ -1,7 +1,7 @@
 """Authentication routes."""
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -9,7 +9,7 @@ from app.core.audit import record_audit_event
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.core.rate_limit import limiter
-from app.core.security import create_access_token, get_current_user_payload, verify_password
+from app.core.security import create_access_token, generate_csrf_token, get_current_user_payload, verify_password
 from app.db.database import get_db
 from app.db.models import User
 
@@ -25,6 +25,7 @@ class LoginRequest(BaseModel):
 class LoginResponse(BaseModel):
     access_token: str
     token_type: str
+    csrf_token: str
     user: dict
 
 
@@ -39,7 +40,7 @@ class UserResponse(BaseModel):
 
 @router.post("/login", response_model=LoginResponse)
 @limiter.limit(settings.RATE_LIMIT_LOGIN)
-async def login(request: Request, credentials: LoginRequest, db: Session = Depends(get_db)):
+async def login(request: Request, response: Response, credentials: LoginRequest, db: Session = Depends(get_db)):
     """Login and JWT token generation."""
     user = db.query(User).filter(User.username == credentials.username).first()
 
@@ -63,6 +64,28 @@ async def login(request: Request, credentials: LoginRequest, db: Session = Depen
         "role": user.role,
     }
     access_token = create_access_token(token_data)
+    csrf_token = generate_csrf_token()
+
+    # Cookie de sesion segura para clientes browser.
+    response.set_cookie(
+        key=settings.SESSION_COOKIE_NAME,
+        value=access_token,
+        httponly=True,
+        secure=True,
+        samesite="strict",
+        max_age=settings.JWT_EXPIRATION_MINUTES * 60,
+        path="/",
+    )
+    # CSRF token legible por JS para enviarlo en cabecera.
+    response.set_cookie(
+        key=settings.CSRF_COOKIE_NAME,
+        value=csrf_token,
+        httponly=False,
+        secure=True,
+        samesite="strict",
+        max_age=settings.JWT_EXPIRATION_MINUTES * 60,
+        path="/",
+    )
 
     user.last_login = datetime.now(timezone.utc)
     db.commit()
@@ -80,6 +103,7 @@ async def login(request: Request, credentials: LoginRequest, db: Session = Depen
     return {
         "access_token": access_token,
         "token_type": "bearer",
+        "csrf_token": csrf_token,
         "user": {
             "id": user.id,
             "username": user.username,

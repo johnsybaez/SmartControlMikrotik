@@ -1,14 +1,14 @@
 import { create } from 'zustand';
 import api from '../services/api';
 
-const useAuthStore = create((set, get) => ({
+const useAuthStore = create((set) => ({
   user: null,
   token: localStorage.getItem('authToken'),
   isAuthenticated: false,
   isLoading: false,
   error: null,
 
-  // Initialize auth state
+  // Initialize auth state.
   init: async () => {
     const token = localStorage.getItem('authToken');
     if (token) {
@@ -23,12 +23,13 @@ const useAuthStore = create((set, get) => ({
         });
       } catch (error) {
         localStorage.removeItem('authToken');
+        localStorage.removeItem('csrfToken');
         set({
           user: null,
           token: null,
           isAuthenticated: false,
           isLoading: false,
-          error: 'Sesión expirada',
+          error: 'Sesion expirada',
         });
       }
     } else {
@@ -36,21 +37,20 @@ const useAuthStore = create((set, get) => ({
     }
   },
 
-  // Login
+  // Login.
   login: async (username, password) => {
     try {
       set({ isLoading: true, error: null });
-      
-      // Enviar como JSON
+
       const response = await api.post('/api/auth/login', {
         username,
         password,
       });
 
-      const { access_token } = response.data;
+      const { access_token, csrf_token } = response.data;
       localStorage.setItem('authToken', access_token);
+      localStorage.setItem('csrfToken', csrf_token);
 
-      // Get user info
       const userResponse = await api.get('/api/auth/me');
 
       set({
@@ -63,7 +63,9 @@ const useAuthStore = create((set, get) => ({
 
       return true;
     } catch (error) {
-      const errorMessage = error.response?.data?.detail || 'Error de autenticación';
+      const errorMessage = error.response?.data?.detail || 'Error de autenticacion';
+      localStorage.removeItem('authToken');
+      localStorage.removeItem('csrfToken');
       set({
         user: null,
         token: null,
@@ -75,9 +77,10 @@ const useAuthStore = create((set, get) => ({
     }
   },
 
-  // Logout
+  // Logout.
   logout: () => {
     localStorage.removeItem('authToken');
+    localStorage.removeItem('csrfToken');
     set({
       user: null,
       token: null,
@@ -86,7 +89,7 @@ const useAuthStore = create((set, get) => ({
     });
   },
 
-  // Clear error
+  // Clear error.
   clearError: () => set({ error: null }),
 }));
 
