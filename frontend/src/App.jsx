@@ -1,6 +1,6 @@
 import './index.css';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { useEffect, useRef } from 'react';
 import useAuthStore from './store/authStore';
 import Dashboard from './components/Dashboard';
 import DashboardHome from './components/DashboardHome';
@@ -11,7 +11,8 @@ import Login from './pages/Login';
 import Settings from './pages/Settings';
 import UsersModule from './pages/UsersModule';
 
-// Protected Route wrapper
+const IDLE_TIMEOUT_MINUTES = Number(import.meta.env.VITE_SESSION_IDLE_MINUTES || 30);
+
 function ProtectedRoute({ children }) {
   const { isAuthenticated, isLoading } = useAuthStore();
 
@@ -26,6 +27,47 @@ function ProtectedRoute({ children }) {
   return isAuthenticated ? children : <Navigate to="/login" replace />;
 }
 
+function IdleSessionGuard() {
+  const { isAuthenticated, logout } = useAuthStore();
+  const navigate = useNavigate();
+  const idleTimerRef = useRef(null);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      if (idleTimerRef.current) {
+        clearTimeout(idleTimerRef.current);
+      }
+      return;
+    }
+
+    const timeoutMs = IDLE_TIMEOUT_MINUTES * 60 * 1000;
+
+    const resetIdleTimer = () => {
+      if (idleTimerRef.current) {
+        clearTimeout(idleTimerRef.current);
+      }
+
+      idleTimerRef.current = setTimeout(() => {
+        logout();
+        navigate('/login', { replace: true });
+      }, timeoutMs);
+    };
+
+    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'];
+    events.forEach((evt) => window.addEventListener(evt, resetIdleTimer, { passive: true }));
+    resetIdleTimer();
+
+    return () => {
+      events.forEach((evt) => window.removeEventListener(evt, resetIdleTimer));
+      if (idleTimerRef.current) {
+        clearTimeout(idleTimerRef.current);
+      }
+    };
+  }, [isAuthenticated, logout, navigate]);
+
+  return null;
+}
+
 function App() {
   const { init } = useAuthStore();
 
@@ -35,6 +77,7 @@ function App() {
 
   return (
     <BrowserRouter>
+      <IdleSessionGuard />
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route

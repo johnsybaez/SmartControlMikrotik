@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     CSRF_COOKIE_NAME: str = "smartcontrol_csrf"
     CSRF_HEADER_NAME: str = "X-CSRF-Token"
     CSRF_PROTECTION_ENABLED: bool = True
+    MFA_ISSUER_NAME: str = "SmartControl"
+    SESSION_IDLE_TIMEOUT_MINUTES: int = 30
 
     DATABASE_URL: str = "sqlite:///./smartbjportal.db"
 

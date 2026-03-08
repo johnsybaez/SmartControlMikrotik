@@ -6,6 +6,7 @@ import { Shield, Lock, User, AlertCircle } from 'lucide-react';
 export default function Login() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [otpCode, setOtpCode] = useState('');
   const navigate = useNavigate();
   
   const { login, isLoading, error, isAuthenticated, clearError } = useAuthStore();
@@ -22,7 +23,7 @@ export default function Login() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const success = await login(username, password);
+    const success = await login(username, password, otpCode);
     if (success) {
       navigate('/');
     }
@@ -89,6 +90,23 @@ export default function Login() {
             </div>
           </div>
 
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">
+              Codigo MFA (si aplica)
+            </label>
+            <div className="relative">
+              <Shield className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-500" />
+              <input
+                type="text"
+                value={otpCode}
+                onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                className="w-full pl-10 pr-4 py-3 bg-[#0f0f0f] border border-[#2a2a2a] text-white rounded-lg focus:ring-2 focus:ring-[#e00000] focus:border-transparent outline-none transition"
+                placeholder="123456"
+                autoComplete="one-time-code"
+                disabled={isLoading}
+              />
+            </div>
+          </div>
           <button
             type="submit"
             disabled={isLoading}
@@ -117,3 +135,4 @@ export default function Login() {
     </div>
   );
 }
+

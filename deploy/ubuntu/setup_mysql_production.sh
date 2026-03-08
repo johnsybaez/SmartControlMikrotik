@@ -129,6 +129,8 @@ SESSION_COOKIE_NAME=smartcontrol_session
 CSRF_COOKIE_NAME=smartcontrol_csrf
 CSRF_HEADER_NAME=X-CSRF-Token
 CSRF_PROTECTION_ENABLED=true
+MFA_ISSUER_NAME=SmartControl
+SESSION_IDLE_TIMEOUT_MINUTES=30
 
 DATABASE_URL=mysql+pymysql://${DB_USER}:${DB_PASS}@127.0.0.1:3306/${DB_NAME}
 
@@ -189,6 +191,8 @@ if [[ -n "$TLS_CERT" ]]; then
 else
   echo "Frontend URL: http://${DOMAIN}"
 fi
+
+
 
 
 

@@ -38,13 +38,14 @@ const useAuthStore = create((set) => ({
   },
 
   // Login.
-  login: async (username, password) => {
+  login: async (username, password, otpCode = null) => {
     try {
       set({ isLoading: true, error: null });
 
       const response = await api.post('/api/auth/login', {
         username,
         password,
+        otp_code: otpCode || undefined,
       });
 
       const { access_token, csrf_token } = response.data;
@@ -94,3 +95,4 @@ const useAuthStore = create((set) => ({
 }));
 
 export default useAuthStore;
+
