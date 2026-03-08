@@ -1,109 +1,133 @@
-"""Configuración de la aplicación"""
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
+"""Application configuration"""
+from pathlib import Path
 from typing import List
 import os
-from pathlib import Path
-from dotenv import load_dotenv
 
-# Cargar variables de entorno desde .env antes de instanciar Settings
+from dotenv import load_dotenv
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+# Load backend/.env before creating Settings.
 env_path = Path(__file__).parent.parent.parent / ".env"
 if env_path.exists():
     load_dotenv(dotenv_path=env_path, override=True)
 
 
 class Settings(BaseSettings):
-    """Configuración de la aplicación"""
-    
-    # App Config
+    """Application configuration"""
+
+    # App config
     APP_NAME: str = "SmartControl"
     APP_VERSION: str = "1.0.0"
     ENVIRONMENT: str = "development"
-    DEBUG: bool = True
-    
+    DEBUG: bool = False
+
     # Server
     HOST: str = "0.0.0.0"
     PORT: int = 8000
     WORKERS: int = 1
-    RELOAD: bool = True
-    
+    RELOAD: bool = False
+
     # Security
     SECRET_KEY: str = Field(..., min_length=32)
     JWT_ALGORITHM: str = "HS256"
-    JWT_EXPIRATION_MINUTES: int = 1440
+    JWT_EXPIRATION_MINUTES: int = 60
     CORS_ORIGINS: str = "http://localhost:3000,http://localhost:5173,http://localhost:5174,https://localhost:5173,https://localhost:5174"
     CORS_CREDENTIALS: bool = True
-    
+    TRUSTED_HOSTS: str = "localhost,127.0.0.1"
+    ENABLE_SECURITY_HEADERS: bool = True
+    FORCE_HTTPS: bool = False
+
     # Database
     DATABASE_URL: str = "sqlite:///./smartbjportal.db"
-    
+
     # Logging
     LOG_LEVEL: str = "INFO"
     LOG_FILE: str = "logs/smartcontrol.log"
-    LOG_MAX_BYTES: int = 10485760  # 10MB
+    LOG_MAX_BYTES: int = 10485760
     LOG_BACKUP_COUNT: int = 5
     LOG_FORMAT: str = "json"
-    
-    # MikroTik Default
+
+    # MikroTik default
     MT_HOST: str = "10.80.0.1"
     MT_PORT: int = 8728
     MT_SSH_PORT: int = 2214
-    MT_USER: str = "portal"
-    MT_PASS: str = "Porta123!!"
+    MT_USER: str = ""
+    MT_PASS: str = ""
     MT_USE_SSL: bool = False
     MT_SSL_VERIFY: bool = False
+    MT_SSH_ALLOW_UNKNOWN_HOSTS: bool = False
+    MT_SSH_KNOWN_HOSTS_FILE: str = ""
     MT_TIMEOUT: int = 10
-    
-    # Address Lists
+    ROUTER_CREDENTIALS_KEY: str = ""
+
+    # Address lists
     LIST_PERMITIDO: str = "INET_PERMITIDO"
+    LIST_LIMITADO: str = "INET_LIMITADO"
     LIST_BLOQUEADO: str = "INET_BLOQUEADO"
-    
-    # Circuit Breaker
+
+    # Circuit breaker
     CIRCUIT_FAILURE_THRESHOLD: int = 3
     CIRCUIT_TIMEOUT_SECONDS: int = 300
     CIRCUIT_HALF_OPEN_MAX_CALLS: int = 1
-    
+
     # Stats
     STATS_COLLECTION_INTERVAL_MINUTES: int = 60
     STATS_RETENTION_DAYS: int = 90
     REPORTS_TEMP_DIR: str = "/tmp/smartcontrol_reports"
-    
-    # Rate Limiting
+
+    # Rate limiting
     RATE_LIMIT_ENABLED: bool = True
     RATE_LIMIT_REQUESTS: int = 100
     RATE_LIMIT_PERIOD_SECONDS: int = 60
-    
+    RATE_LIMIT_LOGIN: str = "5/minute"
+
     # Backup
     BACKUP_ENABLED: bool = True
     BACKUP_SCHEDULE: str = "0 2 * * *"
     BACKUP_RETENTION_DAYS: int = 30
     BACKUP_PATH: str = "./backups"
-    
+
     @property
     def cors_origins_list(self) -> List[str]:
-        """Convierte CORS_ORIGINS string a lista"""
-        return [origin.strip() for origin in self.CORS_ORIGINS.split(",")]
-    
+        return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
+
+    @property
+    def trusted_hosts_list(self) -> List[str]:
+        return [host.strip() for host in self.TRUSTED_HOSTS.split(",") if host.strip()]
+
+    @field_validator("ENVIRONMENT")
+    @classmethod
+    def normalize_environment(cls, value: str) -> str:
+        return value.lower()
+
+    @field_validator("CORS_ORIGINS")
+    @classmethod
+    def validate_cors_origins(cls, value: str) -> str:
+        origins = [origin.strip() for origin in value.split(",") if origin.strip()]
+        if "*" in origins:
+            raise ValueError("CORS_ORIGINS cannot contain '*'")
+        return ",".join(origins)
+
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=True,
-        extra="ignore"
+        extra="ignore",
     )
 
 
-# Singleton settings instance
 settings = Settings()
 
 
-# Crear directorios necesarios
-def ensure_directories():
-    """Crea directorios necesarios si no existen"""
+def ensure_directories() -> None:
+    """Create required directories if they do not exist"""
     directories = [
         os.path.dirname(settings.LOG_FILE),
         settings.BACKUP_PATH,
         settings.REPORTS_TEMP_DIR,
     ]
-    
+
     for directory in directories:
         if directory and not os.path.exists(directory):
             os.makedirs(directory, exist_ok=True)

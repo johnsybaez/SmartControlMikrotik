@@ -7,8 +7,9 @@ from datetime import datetime
 from app.db.database import get_db
 from app.db.models import Device, Router, AddressListEntry
 from app.mikrotik.client import MikroTikClient
-from app.core.security import require_admin_or_operator
+from app.core.security import decrypt_secret, require_admin_or_operator
 from app.core.logging import get_logger
+from app.core.config import settings
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/devices", tags=["Devices"])
@@ -53,16 +54,16 @@ async def list_devices(
             with MikroTikClient(
                 host=router_obj.host,
                 username=router_obj.username,
-                password=router_obj.password,
+                password=decrypt_secret(router_obj.password),
                 api_port=router_obj.api_port,
                 ssh_port=router_obj.ssh_port,
                 use_ssl=router_obj.use_ssl,
                 ssl_verify=router_obj.ssl_verify,
                 timeout=router_obj.timeout
             ) as client:
-                permitted_entries = client.get_address_list("INET_PERMITIDO")
-                limited_entries = client.get_address_list("INET_LIMITADO")
-                blocked_entries = client.get_address_list("INET_BLOQUEADO")
+                permitted_entries = client.get_address_list(settings.LIST_PERMITIDO)
+                limited_entries = client.get_address_list(settings.LIST_LIMITADO)
+                blocked_entries = client.get_address_list(settings.LIST_BLOQUEADO)
 
             permitted_set = {
                 entry.get("address")
@@ -119,19 +120,19 @@ async def list_devices(
                 # Check address lists from DB as fallback
                 permitted = db.query(AddressListEntry).filter(
                     AddressListEntry.router_id == device.router_id,
-                    AddressListEntry.list_name == "INET_PERMITIDO",
+                    AddressListEntry.list_name == settings.LIST_PERMITIDO,
                     AddressListEntry.address == device.ip
                 ).first()
 
                 limited = db.query(AddressListEntry).filter(
                     AddressListEntry.router_id == device.router_id,
-                    AddressListEntry.list_name == "INET_LIMITADO",
+                    AddressListEntry.list_name == settings.LIST_LIMITADO,
                     AddressListEntry.address == device.ip
                 ).first()
 
                 blocked = db.query(AddressListEntry).filter(
                     AddressListEntry.router_id == device.router_id,
-                    AddressListEntry.list_name == "INET_BLOQUEADO",
+                    AddressListEntry.list_name == settings.LIST_BLOQUEADO,
                     AddressListEntry.address == device.ip
                 ).first()
 
@@ -178,19 +179,19 @@ async def get_device(
     if device.ip:
         permitted = db.query(AddressListEntry).filter(
             AddressListEntry.router_id == device.router_id,
-            AddressListEntry.list_name == "INET_PERMITIDO",
+            AddressListEntry.list_name == settings.LIST_PERMITIDO,
             AddressListEntry.address == device.ip
         ).first()
 
         limited = db.query(AddressListEntry).filter(
             AddressListEntry.router_id == device.router_id,
-            AddressListEntry.list_name == "INET_LIMITADO",
+            AddressListEntry.list_name == settings.LIST_LIMITADO,
             AddressListEntry.address == device.ip
         ).first()
         
         blocked = db.query(AddressListEntry).filter(
             AddressListEntry.router_id == device.router_id,
-            AddressListEntry.list_name == "INET_BLOQUEADO",
+            AddressListEntry.list_name == settings.LIST_BLOQUEADO,
             AddressListEntry.address == device.ip
         ).first()
         
@@ -215,3 +216,5 @@ async def get_device(
         "last_seen": device.last_seen,
         "internet_status": internet_status
     }
+
+

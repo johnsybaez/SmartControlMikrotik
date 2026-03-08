@@ -1,11 +1,12 @@
-"""Rutas para estadísticas del sistema"""
+﻿"""Rutas para estadÃ­sticas del sistema"""
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.db.database import get_db
 from app.db.models import Device, Plan, PlanAssignment, Router, AddressListEntry
-from app.core.security import require_admin_or_operator
+from app.core.security import decrypt_secret, require_admin_or_operator
 from app.core.logging import get_logger
+from app.core.config import settings
 from app.mikrotik.client import MikroTikClient
 from typing import Dict, Any, List
 
@@ -36,16 +37,16 @@ async def get_stats_summary(
                     with MikroTikClient(
                         host=router_obj.host,
                         username=router_obj.username,
-                        password=router_obj.password,
+                        password=decrypt_secret(router_obj.password),
                         api_port=router_obj.api_port,
                         ssh_port=router_obj.ssh_port,
                         use_ssl=router_obj.use_ssl,
                         ssl_verify=router_obj.ssl_verify,
                         timeout=router_obj.timeout
                     ) as client:
-                        permitted_entries = client.get_address_list("INET_PERMITIDO")
-                        limited_entries = client.get_address_list("INET_LIMITADO")
-                        blocked_entries = client.get_address_list("INET_BLOQUEADO")
+                        permitted_entries = client.get_address_list(settings.LIST_PERMITIDO)
+                        limited_entries = client.get_address_list(settings.LIST_LIMITADO)
+                        blocked_entries = client.get_address_list(settings.LIST_BLOQUEADO)
 
                     active_devices += len([e for e in permitted_entries if e.get("address")])
                     active_devices += len([e for e in limited_entries if e.get("address")])
@@ -55,10 +56,10 @@ async def get_stats_summary(
         else:
             # Fallback to DB if no routers configured
             active_devices = db.query(AddressListEntry).filter(
-                AddressListEntry.list_name.in_(["INET_PERMITIDO", "INET_LIMITADO"])
+                AddressListEntry.list_name.in_([settings.LIST_PERMITIDO, settings.LIST_LIMITADO])
             ).count()
             blocked_devices = db.query(AddressListEntry).filter(
-                AddressListEntry.list_name == "INET_BLOQUEADO"
+                AddressListEntry.list_name == settings.LIST_BLOQUEADO
             ).count()
         
         # Count total routers
@@ -83,7 +84,7 @@ async def get_stats_summary(
             "total_assignments": total_assignments
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error fetching statistics: {str(e)}")
+        raise HTTPException(status_code=500, detail="No se pudieron obtener estadisticas")
 
 
 @router.get("/devices-by-plan")
@@ -118,7 +119,7 @@ async def get_devices_by_plan(
         
         return data
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error fetching devices by plan: {str(e)}")
+        raise HTTPException(status_code=500, detail="No se pudo obtener dispositivos por plan")
 
 
 @router.get("/revenue")
@@ -170,7 +171,7 @@ async def get_revenue_stats(
             "plans": plans_data
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error fetching revenue stats: {str(e)}")
+        raise HTTPException(status_code=500, detail="No se pudo obtener estadisticas de ingresos")
 
 
 @router.get("/recent-activity")
@@ -230,4 +231,6 @@ async def get_recent_activity(
         
         return activities[:limit]
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error fetching recent activity: {str(e)}")
+        raise HTTPException(status_code=500, detail="No se pudo obtener actividad reciente")
+
+

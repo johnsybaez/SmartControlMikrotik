@@ -1,38 +1,40 @@
-"""Rutas para gestión de usuarios"""
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
-from pydantic import BaseModel
-from typing import List, Optional, Literal
+"""User management routes."""
 from datetime import datetime
+from typing import List, Literal, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
+
+from app.core.audit import record_audit_event
+from app.core.logging import get_logger
+from app.core.security import hash_password, require_admin
 from app.db.database import get_db
 from app.db.models import User
-from app.core.security import require_admin, hash_password
-from app.core.logging import get_logger
-from app.core.audit import record_audit_event
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/users", tags=["Users"])
 
 
 class UserCreate(BaseModel):
-    username: str
-    password: str
-    full_name: Optional[str] = None
-    email: Optional[str] = None
+    username: str = Field(min_length=3, max_length=50)
+    password: str = Field(min_length=8, max_length=128)
+    full_name: Optional[str] = Field(default=None, max_length=100)
+    email: Optional[str] = Field(default=None, max_length=100)
     role: Literal["admin", "operator"] = "operator"
     is_active: bool = True
 
 
 class UserUpdate(BaseModel):
-    password: Optional[str] = None
-    full_name: Optional[str] = None
-    email: Optional[str] = None
+    password: Optional[str] = Field(default=None, min_length=8, max_length=128)
+    full_name: Optional[str] = Field(default=None, max_length=100)
+    email: Optional[str] = Field(default=None, max_length=100)
     role: Optional[Literal["admin", "operator"]] = None
     is_active: Optional[bool] = None
 
 
 class PasswordUpdate(BaseModel):
-    new_password: str
+    new_password: str = Field(min_length=8, max_length=128)
 
 
 class UserResponse(BaseModel):
@@ -49,19 +51,15 @@ class UserResponse(BaseModel):
 
 
 @router.get("", response_model=List[UserResponse])
-async def list_users(
-    db: Session = Depends(get_db),
-    payload: dict = Depends(require_admin)
-):
-    users = db.query(User).order_by(User.id.asc()).all()
-    return users
+async def list_users(db: Session = Depends(get_db), payload: dict = Depends(require_admin)):
+    return db.query(User).order_by(User.id.asc()).all()
 
 
 @router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def create_user(
     user_data: UserCreate,
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_admin)
+    payload: dict = Depends(require_admin),
 ):
     existing = db.query(User).filter(User.username == user_data.username).first()
     if existing:
@@ -73,7 +71,7 @@ async def create_user(
         full_name=user_data.full_name,
         email=user_data.email,
         role=user_data.role,
-        is_active=user_data.is_active
+        is_active=user_data.is_active,
     )
     db.add(user)
     db.commit()
@@ -85,7 +83,7 @@ async def create_user(
         username=payload.get("sub"),
         action="user_created",
         target=user.username,
-        result="success"
+        result="success",
     )
 
     logger.info("user_created", user=user.username, by=payload.get("sub"))
@@ -97,7 +95,7 @@ async def update_user(
     user_id: int,
     user_data: UserUpdate,
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_admin)
+    payload: dict = Depends(require_admin),
 ):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
@@ -123,7 +121,7 @@ async def update_user(
         username=payload.get("sub"),
         action="user_updated",
         target=user.username,
-        result="success"
+        result="success",
     )
 
     logger.info("user_updated", user=user.username, by=payload.get("sub"))
@@ -135,7 +133,7 @@ async def update_user_password(
     user_id: int,
     password_data: PasswordUpdate,
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_admin)
+    payload: dict = Depends(require_admin),
 ):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
@@ -151,7 +149,7 @@ async def update_user_password(
         username=payload.get("sub"),
         action="user_password_updated",
         target=user.username,
-        result="success"
+        result="success",
     )
 
     logger.info("user_password_updated", user=user.username, by=payload.get("sub"))

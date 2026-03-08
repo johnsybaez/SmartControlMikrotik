@@ -1,13 +1,14 @@
-"""Rutas para gestión de routers MikroTik"""
+﻿"""Rutas para gestiÃ³n de routers MikroTik"""
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 from app.db.database import get_db
 from app.db.models import Router
-from app.core.security import require_admin, require_admin_or_operator, get_current_user_payload
+from app.core.security import decrypt_secret, encrypt_secret, require_admin, require_admin_or_operator, get_current_user_payload
 from app.mikrotik.client import MikroTikClient
 from app.core.logging import get_logger
+from app.core.config import settings
 from datetime import datetime
 
 logger = get_logger(__name__)
@@ -25,7 +26,7 @@ class RouterResponse(BaseModel):
     ssl_verify: bool
     timeout: int
     status: str
-    description: Optional[str] = None
+    description: Optional[str] = Field(default=None, max_length=500)
     last_seen: Optional[datetime] = None
     created_at: datetime
 
@@ -34,16 +35,16 @@ class RouterResponse(BaseModel):
 
 
 class RouterCreate(BaseModel):
-    name: str
-    host: str
-    api_port: int = 8728
-    ssh_port: int = 22
-    username: str
-    password: str
+    name: str = Field(min_length=3, max_length=100)
+    host: str = Field(min_length=1, max_length=100)
+    api_port: int = Field(default=8728, ge=1, le=65535)
+    ssh_port: int = Field(default=22, ge=1, le=65535)
+    username: str = Field(min_length=1, max_length=50)
+    password: str = Field(min_length=1, max_length=255)
     use_ssl: bool = False
     ssl_verify: bool = False
-    timeout: int = 10
-    description: Optional[str] = None
+    timeout: int = Field(default=10, ge=1, le=60)
+    description: Optional[str] = Field(default=None, max_length=500)
     status: str = "active"
 
 
@@ -91,7 +92,7 @@ async def create_router(
         api_port=router_data.api_port,
         ssh_port=router_data.ssh_port,
         username=router_data.username,
-        password=router_data.password,
+        password=encrypt_secret(router_data.password),
         use_ssl=router_data.use_ssl,
         ssl_verify=router_data.ssl_verify,
         timeout=router_data.timeout,
@@ -113,7 +114,7 @@ async def get_router(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_admin_or_operator)
 ):
-    """Obtiene detalles de un router específico"""
+    """Obtiene detalles de un router especÃ­fico"""
     router_obj = db.query(Router).filter(Router.id == router_id).first()
     
     if not router_obj:
@@ -131,7 +132,7 @@ async def test_router_connection(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_admin)
 ):
-    """Prueba conexión con el router MikroTik"""
+    """Prueba conexiÃ³n con el router MikroTik"""
     
     # Obtener router de DB
     router_obj = db.query(Router).filter(Router.id == router_id).first()
@@ -147,14 +148,14 @@ async def test_router_connection(
         with MikroTikClient(
             host=router_obj.host,
             username=router_obj.username,
-            password=router_obj.password,
+            password=decrypt_secret(router_obj.password),
             api_port=router_obj.api_port,
             ssh_port=router_obj.ssh_port,
             use_ssl=router_obj.use_ssl,
             ssl_verify=router_obj.ssl_verify,
             timeout=router_obj.timeout
         ) as client:
-            # Obtener información del sistema
+            # Obtener informaciÃ³n del sistema
             system_info = client.get_system_resource()
             
             # Actualizar last_seen en DB
@@ -177,7 +178,7 @@ async def test_router_connection(
                     "free_memory": system_info.get("free-memory", "unknown"),
                     "total_memory": system_info.get("total-memory", "unknown"),
                 },
-                message=f"Conexión exitosa vía {client.method_used}"
+                message=f"ConexiÃ³n exitosa vÃ­a {client.method_used}"
             )
     
     except Exception as e:
@@ -189,7 +190,7 @@ async def test_router_connection(
         
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Error conectando al router: {str(e)}"
+            detail="No se pudo conectar al router"
         )
 
 
@@ -214,7 +215,7 @@ async def get_router_address_lists(
         with MikroTikClient(
             host=router_obj.host,
             username=router_obj.username,
-            password=router_obj.password,
+            password=decrypt_secret(router_obj.password),
             api_port=router_obj.api_port,
             ssh_port=router_obj.ssh_port,
             use_ssl=router_obj.use_ssl,
@@ -234,7 +235,7 @@ async def get_router_address_lists(
         logger.error("get_address_lists_failed", router_id=router_id, error=str(e))
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Error obteniendo address-lists: {str(e)}"
+            detail="No se pudieron obtener address-lists"
         )
 
 
@@ -259,7 +260,7 @@ async def get_router_dhcp_leases(
         with MikroTikClient(
             host=router_obj.host,
             username=router_obj.username,
-            password=router_obj.password,
+            password=decrypt_secret(router_obj.password),
             api_port=router_obj.api_port,
             ssh_port=router_obj.ssh_port,
             use_ssl=router_obj.use_ssl,
@@ -279,7 +280,7 @@ async def get_router_dhcp_leases(
         logger.error("get_dhcp_leases_failed", router_id=router_id, error=str(e))
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Error obteniendo leases DHCP: {str(e)}"
+            detail="No se pudieron obtener leases DHCP"
         )
 
 
@@ -305,7 +306,7 @@ async def sync_dhcp_leases(
         with MikroTikClient(
             host=router_obj.host,
             username=router_obj.username,
-            password=router_obj.password,
+            password=decrypt_secret(router_obj.password),
             api_port=router_obj.api_port,
             ssh_port=router_obj.ssh_port,
             use_ssl=router_obj.use_ssl,
@@ -376,7 +377,7 @@ async def sync_dhcp_leases(
         logger.error("dhcp_sync_failed", router_id=router_id, error=str(e))
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Error sincronizando DHCP: {str(e)}"
+            detail="No se pudieron sincronizar leases DHCP"
         )
 
 
@@ -393,7 +394,7 @@ async def add_to_address_list(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_admin)
 ):
-    """Agrega una dirección a una address-list"""
+    """Agrega una direcciÃ³n a una address-list"""
     
     router_obj = db.query(Router).filter(Router.id == router_id).first()
     
@@ -407,7 +408,7 @@ async def add_to_address_list(
         with MikroTikClient(
             host=router_obj.host,
             username=router_obj.username,
-            password=router_obj.password,
+            password=decrypt_secret(router_obj.password),
             api_port=router_obj.api_port,
             ssh_port=router_obj.ssh_port,
             use_ssl=router_obj.use_ssl,
@@ -424,7 +425,7 @@ async def add_to_address_list(
             return {
                 "success": True,
                 "method_used": client.method_used,
-                "message": f"Dirección {entry.address} agregada a {list_name}",
+                "message": f"DirecciÃ³n {entry.address} agregada a {list_name}",
                 "data": result
             }
     
@@ -435,7 +436,7 @@ async def add_to_address_list(
                     error=str(e))
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Error agregando dirección: {str(e)}"
+            detail="No se pudo agregar la direccion"
         )
 
 
@@ -447,7 +448,7 @@ async def remove_from_address_list(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_admin)
 ):
-    """Elimina una dirección de una address-list"""
+    """Elimina una direcciÃ³n de una address-list"""
     
     router_obj = db.query(Router).filter(Router.id == router_id).first()
     
@@ -461,7 +462,7 @@ async def remove_from_address_list(
         with MikroTikClient(
             host=router_obj.host,
             username=router_obj.username,
-            password=router_obj.password,
+            password=decrypt_secret(router_obj.password),
             api_port=router_obj.api_port,
             ssh_port=router_obj.ssh_port,
             use_ssl=router_obj.use_ssl,
@@ -478,7 +479,7 @@ async def remove_from_address_list(
             return {
                 "success": True,
                 "method_used": client.method_used,
-                "message": f"Dirección {address} eliminada de {list_name}",
+                "message": f"DirecciÃ³n {address} eliminada de {list_name}",
                 "data": result
             }
     
@@ -489,7 +490,7 @@ async def remove_from_address_list(
                     error=str(e))
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Error eliminando dirección: {str(e)}"
+            detail="No se pudo eliminar la direccion"
         )
 
 
@@ -522,7 +523,7 @@ async def toggle_device_internet(
         with MikroTikClient(
             host=router_obj.host,
             username=router_obj.username,
-            password=router_obj.password,
+            password=decrypt_secret(router_obj.password),
             api_port=router_obj.api_port,
             ssh_port=router_obj.ssh_port,
             use_ssl=router_obj.use_ssl,
@@ -531,7 +532,7 @@ async def toggle_device_internet(
         ) as client:
             comment = request.comment or f"SmartBJ Portal - {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}"
             list_type = (request.list_type or "permitted").lower()
-            target_list = "INET_LIMITADO" if list_type == "limited" else "INET_PERMITIDO"
+            target_list = settings.LIST_LIMITADO if list_type == "limited" else settings.LIST_PERMITIDO
             
             if request.enable:
                 # PERMITIR/LIMITAR: Eliminar de TODAS las listas y agregar solo a la objetivo
@@ -541,12 +542,12 @@ async def toggle_device_internet(
                 logger.info("allowing_device", ip=request.ip_address, target_list=target_list)
                 
                 # PASO 1: Eliminar COMPLETAMENTE de INET_BLOQUEADO y la otra lista permitida
-                lists_to_clean = ["INET_BLOQUEADO"]
+                lists_to_clean = [settings.LIST_BLOQUEADO]
                 # Si vamos a INET_PERMITIDO, limpiar INET_LIMITADO y viceversa
-                if target_list == "INET_PERMITIDO":
-                    lists_to_clean.append("INET_LIMITADO")
+                if target_list == settings.LIST_PERMITIDO:
+                    lists_to_clean.append(settings.LIST_LIMITADO)
                 else:
-                    lists_to_clean.append("INET_PERMITIDO")
+                    lists_to_clean.append(settings.LIST_PERMITIDO)
                 
                 for list_to_clean in lists_to_clean:
                     try:
@@ -558,9 +559,9 @@ async def toggle_device_internet(
                     except Exception as e:
                         logger.warning(f"Error al eliminar de {list_to_clean}: {e}")
                 
-                # PASO 2: Verificar que NO esté en las listas bloqueadas/opuestas
+                # PASO 2: Verificar que NO estÃ© en las listas bloqueadas/opuestas
                 try:
-                    verificacion_bloqueado = client.get_address_list("INET_BLOQUEADO")
+                    verificacion_bloqueado = client.get_address_list(settings.LIST_BLOQUEADO)
                     still_in_bloqueado = any(e.get("address") == request.ip_address for e in verificacion_bloqueado)
                     
                     if still_in_bloqueado:
@@ -579,7 +580,9 @@ async def toggle_device_internet(
                 # PASO 4: Eliminar de DB
                 deleted_count = db.query(AddressListModel).filter(
                     AddressListModel.router_id == router_id,
-                    AddressListModel.list_name.in_(["INET_BLOQUEADO", "INET_PERMITIDO", "INET_LIMITADO"]),
+                    AddressListModel.list_name.in_(
+                        [settings.LIST_BLOQUEADO, settings.LIST_PERMITIDO, settings.LIST_LIMITADO]
+                    ),
                     AddressListModel.address == request.ip_address
                 ).delete()
                 
@@ -604,7 +607,7 @@ async def toggle_device_internet(
                     synced_at=datetime.utcnow()
                 )
                 db.add(entry)
-                action = "permitido" if target_list == "INET_PERMITIDO" else "limitado"
+                action = "permitido" if target_list == settings.LIST_PERMITIDO else "limitado"
                 
                 logger.info("device_allowed_successfully", ip=request.ip_address, list=target_list)
             else:
@@ -615,7 +618,7 @@ async def toggle_device_internet(
                 logger.info("blocking_device", ip=request.ip_address)
                 
                 # PASO 1: Eliminar COMPLETAMENTE de INET_PERMITIDO e INET_LIMITADO
-                for list_to_clean in ["INET_PERMITIDO", "INET_LIMITADO"]:
+                for list_to_clean in [settings.LIST_PERMITIDO, settings.LIST_LIMITADO]:
                     try:
                         count = client.remove_from_address_list(list_to_clean, request.ip_address)
                         if count > 0:
@@ -625,10 +628,10 @@ async def toggle_device_internet(
                     except Exception as e:
                         logger.warning(f"Error al eliminar de {list_to_clean}: {e}")
                 
-                # PASO 2: Verificar que NO esté en INET_PERMITIDO ni INET_LIMITADO
+                # PASO 2: Verificar que NO estÃ© en INET_PERMITIDO ni INET_LIMITADO
                 try:
-                    verificacion_permitido = client.get_address_list("INET_PERMITIDO")
-                    verificacion_limitado = client.get_address_list("INET_LIMITADO")
+                    verificacion_permitido = client.get_address_list(settings.LIST_PERMITIDO)
+                    verificacion_limitado = client.get_address_list(settings.LIST_LIMITADO)
                     
                     still_in_permitido = any(e.get("address") == request.ip_address for e in verificacion_permitido)
                     still_in_limitado = any(e.get("address") == request.ip_address for e in verificacion_limitado)
@@ -644,7 +647,7 @@ async def toggle_device_internet(
                 
                 # PASO 3: Eliminar duplicados de INET_BLOQUEADO si existen
                 try:
-                    count_bloqueado = client.remove_from_address_list("INET_BLOQUEADO", request.ip_address)
+                    count_bloqueado = client.remove_from_address_list(settings.LIST_BLOQUEADO, request.ip_address)
                     if count_bloqueado > 0:
                         logger.info(f"Limpiados {count_bloqueado} duplicados de INET_BLOQUEADO")
                 except Exception as e:
@@ -653,7 +656,9 @@ async def toggle_device_internet(
                 # PASO 4: Eliminar de DB
                 deleted_count = db.query(AddressListModel).filter(
                     AddressListModel.router_id == router_id,
-                    AddressListModel.list_name.in_(["INET_PERMITIDO", "INET_LIMITADO", "INET_BLOQUEADO"]),
+                    AddressListModel.list_name.in_(
+                        [settings.LIST_PERMITIDO, settings.LIST_LIMITADO, settings.LIST_BLOQUEADO]
+                    ),
                     AddressListModel.address == request.ip_address
                 ).delete()
                 
@@ -666,13 +671,13 @@ async def toggle_device_internet(
                 )
                 
                 # PASO 5: Agregar SOLO a bloqueados
-                logger.info(f"Agregando {request.ip_address} a INET_BLOQUEADO")
-                result = client.add_to_address_list("INET_BLOQUEADO", request.ip_address, comment)
+                logger.info(f"Agregando {request.ip_address} a {settings.LIST_BLOQUEADO}")
+                result = client.add_to_address_list(settings.LIST_BLOQUEADO, request.ip_address, comment)
                 
                 # PASO 6: Guardar en DB
                 entry = AddressListModel(
                     router_id=router_id,
-                    list_name="INET_BLOQUEADO",
+                    list_name=settings.LIST_BLOQUEADO,
                     address=request.ip_address,
                     comment=comment,
                     synced_at=datetime.utcnow()
@@ -707,7 +712,7 @@ async def toggle_device_internet(
                     error=str(e))
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Error cambiando estado de internet: {str(e)}"
+            detail="No se pudo cambiar el estado de internet"
         )
 
 
@@ -730,13 +735,13 @@ async def delete_router(
         )
     
     try:
-        # Eliminar dispositivos asociados (esto también eliminará plan_assignments y traffic_stats por CASCADE)
+        # Eliminar dispositivos asociados (esto tambiÃ©n eliminarÃ¡ plan_assignments y traffic_stats por CASCADE)
         db.query(Device).filter(Device.router_id == router_id).delete()
         
         # Eliminar address list entries
         db.query(AddressListEntry).filter(AddressListEntry.router_id == router_id).delete()
         
-        # Eliminar snapshots de estadísticas
+        # Eliminar snapshots de estadÃ­sticas
         db.query(StatsSnapshot).filter(StatsSnapshot.router_id == router_id).delete()
         
         # Eliminar el router
@@ -755,5 +760,9 @@ async def delete_router(
         logger.error("router_delete_failed", router_id=router_id, error=str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error eliminando router: {str(e)}"
+            detail="No se pudo eliminar el router"
         )
+
+
+
+

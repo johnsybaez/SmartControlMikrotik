@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 from app.db.database import get_db
 from app.db.models import Device, Router, Plan, PlanAssignment
-from app.core.security import require_admin
+from app.core.security import decrypt_secret, require_admin
 from app.core.logging import get_logger
 from app.mikrotik.client import MikroTikClient
 
@@ -47,16 +47,15 @@ async def list_queues(
         raise HTTPException(status_code=404, detail="Router no encontrado")
     
     try:
-        client = MikroTikClient(
+        with MikroTikClient(
             host=router_obj.host,
             username=router_obj.username,
-            password=router_obj.password,
+            password=decrypt_secret(router_obj.password),
             api_port=router_obj.api_port,
             ssh_port=router_obj.ssh_port,
             use_ssl=router_obj.use_ssl
-        )
-        
-        queues = await client.get_simple_queues()
+        ) as client:
+            queues = client.get_simple_queues()
         
         result = []
         for queue in queues:
@@ -74,7 +73,7 @@ async def list_queues(
         logger.error("list_queues_failed", router_id=router_id, error=str(e))
         raise HTTPException(
             status_code=500,
-            detail=f"Error al obtener queues: {str(e)}"
+            detail="No se pudieron obtener queues"
         )
 
 
@@ -90,30 +89,29 @@ async def create_queue(
         raise HTTPException(status_code=404, detail="Router no encontrado")
     
     try:
-        client = MikroTikClient(
+        with MikroTikClient(
             host=router_obj.host,
             username=router_obj.username,
-            password=router_obj.password,
+            password=decrypt_secret(router_obj.password),
             api_port=router_obj.api_port,
             ssh_port=router_obj.ssh_port,
             use_ssl=router_obj.use_ssl
-        )
-        
-        # Formato: upload/download
-        max_limit = f"{queue_data.max_limit_upload}/{queue_data.max_limit_download}"
-        
-        queue_id = await client.add_simple_queue(
-            name=queue_data.name,
-            target=queue_data.target,
-            max_limit=max_limit,
-            comment=queue_data.comment
-        )
+        ) as client:
+            # Formato: upload/download
+            max_limit = f"{queue_data.max_limit_upload}/{queue_data.max_limit_download}"
+            
+            queue_id = client.add_simple_queue(
+                name=queue_data.name,
+                target=queue_data.target,
+                max_limit=max_limit,
+                comment=queue_data.comment
+            )
         
         logger.info(
             "queue_created",
             router_id=queue_data.router_id,
             queue_name=queue_data.name,
-            user=current_user["username"]
+            user=current_user.get("sub", "unknown")
         )
         
         return {
@@ -126,7 +124,7 @@ async def create_queue(
         logger.error("create_queue_failed", error=str(e))
         raise HTTPException(
             status_code=500,
-            detail=f"Error al crear queue: {str(e)}"
+            detail="No se pudo crear la queue"
         )
 
 
@@ -143,22 +141,21 @@ async def delete_queue(
         raise HTTPException(status_code=404, detail="Router no encontrado")
     
     try:
-        client = MikroTikClient(
+        with MikroTikClient(
             host=router_obj.host,
             username=router_obj.username,
-            password=router_obj.password,
+            password=decrypt_secret(router_obj.password),
             api_port=router_obj.api_port,
             ssh_port=router_obj.ssh_port,
             use_ssl=router_obj.use_ssl
-        )
-        
-        await client.remove_simple_queue(queue_id)
+        ) as client:
+            client.remove_simple_queue(queue_id)
         
         logger.info(
             "queue_deleted",
             router_id=router_id,
             queue_id=queue_id,
-            user=current_user["username"]
+            user=current_user.get("sub", "unknown")
         )
         
         return {"message": "Queue eliminada exitosamente"}
@@ -167,7 +164,7 @@ async def delete_queue(
         logger.error("delete_queue_failed", error=str(e))
         raise HTTPException(
             status_code=500,
-            detail=f"Error al eliminar queue: {str(e)}"
+            detail="No se pudo eliminar la queue"
         )
 
 
@@ -191,47 +188,46 @@ async def assign_plan_to_device(
         raise HTTPException(status_code=404, detail="Router no encontrado")
     
     try:
-        client = MikroTikClient(
+        with MikroTikClient(
             host=router_obj.host,
             username=router_obj.username,
-            password=router_obj.password,
+            password=decrypt_secret(router_obj.password),
             api_port=router_obj.api_port,
             ssh_port=router_obj.ssh_port,
             use_ssl=router_obj.use_ssl
-        )
-        
-        # Nombre de la queue
-        queue_name = f"QoS-{device.hostname or device.mac}"
-        comment = f"SmartBJPortal - Plan: {plan.name}"
-        
-        # Verificar si ya existe una queue para este dispositivo
-        existing_queues = await client.get_simple_queues()
-        existing_queue = None
-        for q in existing_queues:
-            if device.ip in q.get("target", ""):
-                existing_queue = q
-                break
-        
-        # Formato: upload/download
-        max_limit = f"{plan.upload_limit}/{plan.download_limit}"
-        
-        if existing_queue:
-            # Actualizar queue existente
-            await client.update_simple_queue(
-                queue_id=existing_queue[".id"],
-                max_limit=max_limit,
-                comment=comment
-            )
-            action = "actualizada"
-        else:
-            # Crear nueva queue
-            await client.add_simple_queue(
-                name=queue_name,
-                target=f"{device.ip}/32",
-                max_limit=max_limit,
-                comment=comment
-            )
-            action = "creada"
+        ) as client:
+            # Nombre de la queue
+            queue_name = f"QoS-{device.hostname or device.mac}"
+            comment = f"SmartBJPortal - Plan: {plan.name}"
+            
+            # Verificar si ya existe una queue para este dispositivo
+            existing_queues = client.get_simple_queues()
+            existing_queue = None
+            for q in existing_queues:
+                if device.ip in q.get("target", ""):
+                    existing_queue = q
+                    break
+            
+            # Formato: upload/download
+            max_limit = f"{plan.upload_limit}/{plan.download_limit}"
+            
+            if existing_queue:
+                # Actualizar queue existente
+                client.update_simple_queue(
+                    queue_id=existing_queue[".id"],
+                    max_limit=max_limit,
+                    comment=comment
+                )
+                action = "actualizada"
+            else:
+                # Crear nueva queue
+                client.add_simple_queue(
+                    name=queue_name,
+                    target=f"{device.ip}/32",
+                    max_limit=max_limit,
+                    comment=comment
+                )
+                action = "creada"
         
         # Registrar asignaciÃ³n en BD
         existing_assignment = db.query(PlanAssignment).filter(
@@ -255,7 +251,7 @@ async def assign_plan_to_device(
             device_id=device.id,
             plan_id=plan.id,
             action=action,
-            user=current_user["username"]
+            user=current_user.get("sub", "unknown")
         )
         
         return {
@@ -270,7 +266,7 @@ async def assign_plan_to_device(
         logger.error("assign_plan_failed", error=str(e))
         raise HTTPException(
             status_code=500,
-            detail=f"Error al asignar plan: {str(e)}"
+            detail="No se pudo asignar el plan"
         )
 
 
@@ -290,21 +286,20 @@ async def unassign_plan_from_device(
         router_obj = db.query(Router).filter(Router.id == device.router_id).first()
         if router_obj:
             try:
-                client = MikroTikClient(
+                with MikroTikClient(
                     host=router_obj.host,
                     username=router_obj.username,
-                    password=router_obj.password,
+                    password=decrypt_secret(router_obj.password),
                     api_port=router_obj.api_port,
                     ssh_port=router_obj.ssh_port,
                     use_ssl=router_obj.use_ssl
-                )
-                
-                # Buscar y eliminar queue
-                queues = await client.get_simple_queues()
-                for q in queues:
-                    if device.ip in q.get("target", ""):
-                        await client.remove_simple_queue(q[".id"])
-                        break
+                ) as client:
+                    # Buscar y eliminar queue
+                    queues = client.get_simple_queues()
+                    for q in queues:
+                        if device.ip in q.get("target", ""):
+                            client.remove_simple_queue(q[".id"])
+                            break
             except Exception as e:
                 logger.warning("queue_removal_failed", device_id=device_id, error=str(e))
     
@@ -318,6 +313,8 @@ async def unassign_plan_from_device(
     device.current_plan_id = None
     db.commit()
     
-    logger.info("plan_unassigned", device_id=device_id, user=current_user["username"])
+    logger.info("plan_unassigned", device_id=device_id, user=current_user.get("sub", "unknown"))
     
     return {"message": "Plan desasignado exitosamente"}
+
+
